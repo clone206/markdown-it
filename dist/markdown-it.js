@@ -1181,7 +1181,7 @@ var _rules = [
   // First 2 params - rule name & source. Secondary array - list of rules,
   // which can be terminated by this one.
   [ 'table',      require('./rules_block/table'),      [ 'paragraph', 'reference' ] ],
-  [ 'code',       require('./rules_block/code') ],
+  [ 'code',       require('./rules_block/code'),       [ 'paragraph' ] ],               // KW: Allowing code block to interrupt paras
   [ 'fence',      require('./rules_block/fence'),      [ 'paragraph', 'reference', 'blockquote', 'list' ] ],
   [ 'blockquote', require('./rules_block/blockquote'), [ 'paragraph', 'reference', 'blockquote', 'list' ] ],
   [ 'hr',         require('./rules_block/hr'),         [ 'paragraph', 'reference', 'blockquote', 'list' ] ],
@@ -1945,7 +1945,7 @@ Renderer.prototype.renderToken = function renderToken(tokens, idx, options) {
 
   // Check if we need to add a newline after this tag
   if (token.block) {
-    needLf = true;
+    needLf = false;
 
     if (token.nesting === 1) {
       if (idx + 1 < tokens.length) {
@@ -2701,10 +2701,13 @@ module.exports = function blockquote(state, startLine, endLine, silent) {
 'use strict';
 
 
-module.exports = function code(state, startLine, endLine/*, silent*/) {
+module.exports = function code(state, startLine, endLine, silent) {
   var nextLine, last, token;
 
   if (state.sCount[startLine] - state.blkIndent < 4) { return false; }
+
+  // KW If we're interrupting an element here, don't bother pushing the token
+  if (silent) { return true; }
 
   last = nextLine = startLine + 1;
 
@@ -3380,6 +3383,8 @@ module.exports = function list(state, startLine, endLine, silent) {
     itemLines[1] = nextLine;
     contentStart = state.bMarks[startLine];
 
+    // KW: If this is an empty line, we should close out the list
+    if (prevEmptyEnd) { break; }
     if (nextLine >= endLine) { break; }
 
     //
@@ -3449,7 +3454,8 @@ module.exports = function paragraph(state, startLine/*, endLine*/) {
   for (; nextLine < endLine && !state.isEmpty(nextLine); nextLine++) {
     // this would be a code block normally, but after paragraph
     // it's considered a lazy continuation regardless of what's there
-    if (state.sCount[nextLine] - state.blkIndent > 3) { continue; }
+    // KW: Allowing code blocks to interrupt paras
+    // if (state.sCount[nextLine] - state.blkIndent > 3) { continue; }
 
     // quirk for blockquotes, this line should already be checked by that rule
     if (state.sCount[nextLine] < 0) { continue; }
@@ -6267,10 +6273,11 @@ function compile(self) {
   self.re.schema_test   = RegExp('(^|(?!_)(?:[><\uff5c]|' + re.src_ZPCc + '))(' + slist + ')', 'i');
   self.re.schema_search = RegExp('(^|(?!_)(?:[><\uff5c]|' + re.src_ZPCc + '))(' + slist + ')', 'ig');
 
-  self.re.pretest = RegExp(
-    '(' + self.re.schema_test.source + ')|(' + self.re.host_fuzzy_test.source + ')|@',
-    'i'
-  );
+  self.re.pretest       = RegExp(
+                            '(' + self.re.schema_test.source + ')|' +
+                            '(' + self.re.host_fuzzy_test.source + ')|' +
+                            '@',
+                            'i');
 
   //
   // Cleanup
@@ -6712,7 +6719,7 @@ module.exports = function (opts) {
           '\\.(?!' + re.src_ZCc + '|[.]).|' +
           (opts && opts['---'] ?
             '\\-(?!--(?:[^-]|$))(?:-*)|' // `---` => long dash, terminate
-            :
+          :
             '\\-+|'
           ) +
           '\\,(?!' + re.src_ZCc + ').|' +      // allow `,,,` in paths
@@ -6749,7 +6756,10 @@ module.exports = function (opts) {
       '|' +
       '(?:' + re.src_pseudo_letter + ')' +
       '|' +
-      '(?:' + re.src_pseudo_letter + '(?:-|' + re.src_pseudo_letter + '){0,61}' + re.src_pseudo_letter + ')' +
+      // don't allow `--` in domain names, because:
+      // - that can conflict with markdown &mdash; / &ndash;
+      // - nobody use those anyway
+      '(?:' + re.src_pseudo_letter + '(?:-(?!-)|' + re.src_pseudo_letter + '){0,61}' + re.src_pseudo_letter + ')' +
     ')';
 
   re.src_host =
