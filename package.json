@@ -17,7 +17,9 @@
   },
   "scripts": {
     "test": "make test",
-    "heroku-postbuild": "npm install express"
+    "heroku-postbuild": "npm install express",
+    "build": "browserify ./ -s markdownit -o dist/markdown-it.js",
+    "uglify": "uglifyjs dist/markdown-it.js -b beautify=false,ascii_only=true -c -m --preamble \"/*! markdown-it 8.4.2 https://github.com//markdown-it/markdown-it @license MIT */\" -o dist/markdown-it.min.js"
   },
   "files": [
     "index.js",
